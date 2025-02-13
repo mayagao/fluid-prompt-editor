@@ -1,24 +1,32 @@
-import { useState, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { PopoverPosition } from "@/types/shared";
-import { Repository, Action } from "@/types/primitives";
+import { Repository, Action, Category, CATEGORIES } from "@/types/primitives";
 import {
   RepoIcon,
   FileIcon,
+  GitPullRequestIcon,
+  IssueOpenedIcon,
+  CommentDiscussionIcon,
+  FileDirectoryIcon,
+  ChevronRightIcon,
+  ChevronLeftIcon,
   LinkIcon,
   UploadIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
 } from "@primer/octicons-react";
-import ListItem from "@/components/ui/ListItem";
+import ListItem, { BaseListItemProps } from "@/components/ui/ListItem";
 import Popover from "@/components/ui/Popover";
 import { SAMPLE_REPOS } from "@/data/samples";
 import { useSearch } from "@/hooks/useSearch";
+import { CategorySelector } from "./CategorySelector";
+import { PrimitiveList } from "./PrimitiveList";
+import { SelectableList } from "@/components/ui/SelectableList";
 
 interface PrimitiveSelectorProps {
   isOpen: boolean;
   position: PopoverPosition;
   query: string;
   onClose: () => void;
+  onSelect: (item: Repository | Category) => void;
 }
 
 const ACTIONS: Action[] = [
@@ -42,11 +50,17 @@ export default function PrimitiveSelector({
   position,
   query,
   onClose,
+  onSelect,
 }: PrimitiveSelectorProps) {
   const [allRepos, setAllRepos] = useState<Repository[]>([]);
   const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
+    null
+  );
 
   // Fetch all repos when component mounts
   useEffect(() => {
@@ -98,78 +112,144 @@ export default function PrimitiveSelector({
     }
   }, [isOpen]);
 
-  // Search through all repos regardless of showAll state
+  // Search through all repos using the query from textarea
   const filteredRepos = useSearch(allRepos, query, ["name", "description"]);
   const filteredActions = useSearch(ACTIONS, query, ["label"]);
 
   // Show only first 5 repos if not showing all and not searching
   const visibleRepos =
-    !showAll && !query ? filteredRepos.slice(0, 5) : filteredRepos;
+    !showAll && !query ? filteredRepos.slice(0, 50) : filteredRepos;
 
   const hasResults = visibleRepos.length > 0 || filteredActions.length > 0;
   const showDivider = visibleRepos.length > 0 && filteredActions.length > 0;
+
+  const getCategoryIcon = (iconName: string) => {
+    switch (iconName) {
+      case "repo":
+        return <RepoIcon size={16} />;
+      case "git-pull-request":
+        return <GitPullRequestIcon size={16} />;
+      case "issue-opened":
+        return <IssueOpenedIcon size={16} />;
+      case "comment-discussion":
+        return <CommentDiscussionIcon size={16} />;
+      case "file-directory":
+        return <FileDirectoryIcon size={16} />;
+      default:
+        return <RepoIcon size={16} />;
+    }
+  };
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          if (selectedCategory) {
+            setSelectedCategory(null);
+          } else if (selectedRepo) {
+            setSelectedRepo(null);
+          } else {
+            onClose();
+          }
+          break;
+        case "Backspace":
+          if (query === "" && selectedRepo) {
+            setSelectedRepo(null);
+            setSelectedIndex(0);
+          }
+          break;
+      }
+    },
+    [selectedRepo, selectedCategory, onClose, query]
+  );
+
+  const handleSelectRepo = (repo: Repository) => {
+    setSelectedRepo(repo);
+    setSelectedIndex(0); // Reset selection index for categories
+  };
+
+  const handleSelectCategory = (category: Category) => {
+    setSelectedCategory(category);
+    setSelectedIndex(0);
+  };
 
   return (
     <Popover
       isOpen={isOpen}
       position={position}
       onClose={onClose}
-      className="w-[300px]"
+      className="w-[400px] bg-white rounded-lg shadow-lg border border-gray-200"
+      onKeyDown={handleKeyDown}
     >
+      {selectedRepo && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
+          <button
+            onClick={() => {
+              if (selectedCategory) {
+                setSelectedCategory(null);
+              } else {
+                setSelectedRepo(null);
+              }
+              setSelectedIndex(0);
+            }}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <ChevronLeftIcon size={16} />
+          </button>
+          <span className="text-sm font-medium text-gray-700">
+            {selectedRepo.name}
+            {selectedCategory && ` > ${selectedCategory.label}`}
+          </span>
+        </div>
+      )}
+
       <div className="max-h-[300px] overflow-y-auto py-2">
-        {/* Repositories */}
-        {loading ? (
+        {selectedRepo ? (
+          selectedCategory ? (
+            <PrimitiveList
+              repository={selectedRepo}
+              category={selectedCategory}
+              selectedIndex={selectedIndex}
+              query={query}
+              onSelect={onSelect}
+            />
+          ) : (
+            <CategorySelector
+              selectedRepo={selectedRepo}
+              selectedIndex={selectedIndex}
+              query={query}
+              onSelect={handleSelectCategory}
+            />
+          )
+        ) : // Level 1: Repository Selection
+        loading ? (
           <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
         ) : error ? (
           <div className="px-3 py-2 text-sm text-red-500">{error}</div>
         ) : !hasResults && query ? (
           <ListItem variant="no-results" query={query} />
         ) : (
-          <>
-            {visibleRepos.map((repo) => (
+          <SelectableList
+            items={visibleRepos}
+            selectedIndex={selectedIndex}
+            onSelect={handleSelectRepo}
+            onHighlight={setSelectedIndex}
+            loading={loading}
+            error={error}
+            renderItem={(repo, isSelected) => (
               <ListItem
                 key={repo.id}
                 variant="standard"
                 icon={<RepoIcon size={16} />}
                 title={repo.name}
                 description={repo.description}
+                isSelected={isSelected}
+                onClick={() => handleSelectRepo(repo)}
                 searchQuery={query}
-                suffixIcon={<ChevronRightIcon size={16} />}
-              />
-            ))}
-
-            {/* View all repositories link - only show if not searching and there are more repos */}
-            {!query && filteredRepos.length > 5 && !showAll && (
-              <ListItem
-                variant="link"
-                icon={<ChevronDownIcon size={16} />}
-                label={`View all ${filteredRepos.length} repositories`}
-                onClick={() => setShowAll(true)}
               />
             )}
-
-            {/* Only show divider if both sections have content */}
-            {showDivider && <ListItem variant="divider" />}
-
-            {/* Actions */}
-            {filteredActions.map((action) => (
-              <ListItem
-                key={action.id}
-                variant="standard"
-                icon={
-                  action.type === "file" ? (
-                    <FileIcon size={16} />
-                  ) : action.type === "link" ? (
-                    <LinkIcon size={16} />
-                  ) : (
-                    <UploadIcon size={16} />
-                  )
-                }
-                title={action.label}
-                searchQuery={query}
-              />
-            ))}
-          </>
+          />
         )}
       </div>
     </Popover>

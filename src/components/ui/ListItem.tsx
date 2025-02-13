@@ -99,11 +99,11 @@ export default function ListItem(props: ListItemProps) {
 
       <div className="flex items-center gap-2 w-[calc(100%-20px)]">
         <div className="flex items-center justify-between flex-1 min-w-0">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0 flex-1 ">
             <HighlightedText
               text={props.title}
               highlight={props.searchQuery || ""}
-              className="text-sm flex-shrink-0"
+              className="text-sm flex-shrink-0 truncate max-w-full  "
             />
             {props.description && (
               <div className="text-xs text-gray-500 truncate">
