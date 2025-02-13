@@ -19,7 +19,6 @@ import {
   ChevronRightIcon,
 } from "@primer/octicons-react";
 import { useEffect, useState } from "react";
-import { SelectableList } from "@/components/ui/SelectableList";
 
 interface PrimitiveListProps {
   repository: Repository;
@@ -27,7 +26,6 @@ interface PrimitiveListProps {
   selectedIndex: number;
   query: string;
   onSelect: (item: PullRequest | Issue | Discussion | RepoFile) => void;
-  onHighlight?: (index: number) => void;
 }
 
 export function PrimitiveList({
@@ -36,7 +34,6 @@ export function PrimitiveList({
   selectedIndex,
   query,
   onSelect,
-  onHighlight,
 }: PrimitiveListProps) {
   const [items, setItems] = useState<
     Array<PullRequest | Issue | Discussion | RepoFile>
@@ -214,12 +211,8 @@ export function PrimitiveList({
   }
 
   return (
-    <SelectableList
-      items={items}
-      selectedIndex={selectedIndex}
-      onSelect={onSelect}
-      onHighlight={onHighlight}
-      renderItem={(item, isSelected) => (
+    <>
+      {items.map((item, index) => (
         <ListItem
           key={item.id}
           variant="standard"
@@ -238,14 +231,14 @@ export function PrimitiveList({
               ? item.path
               : undefined
           }
-          isSelected={isSelected}
+          isSelected={index === selectedIndex}
           onClick={() => onSelect(item)}
           searchQuery={query}
           suffixIcon={
             isDirectory(item) ? <ChevronRightIcon size={16} /> : undefined
           }
         />
-      )}
-    />
+      ))}
+    </>
   );
 }

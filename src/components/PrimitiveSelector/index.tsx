@@ -19,7 +19,6 @@ import { SAMPLE_REPOS } from "@/data/samples";
 import { useSearch } from "@/hooks/useSearch";
 import { CategorySelector } from "./CategorySelector";
 import { PrimitiveList } from "./PrimitiveList";
-import { SelectableList } from "@/components/ui/SelectableList";
 
 interface PrimitiveSelectorProps {
   isOpen: boolean;
@@ -118,7 +117,7 @@ export default function PrimitiveSelector({
 
   // Show only first 5 repos if not showing all and not searching
   const visibleRepos =
-    !showAll && !query ? filteredRepos.slice(0, 50) : filteredRepos;
+    !showAll && !query ? filteredRepos.slice(0, 5) : filteredRepos;
 
   const hasResults = visibleRepos.length > 0 || filteredActions.length > 0;
   const showDivider = visibleRepos.length > 0 && filteredActions.length > 0;
@@ -142,7 +141,31 @@ export default function PrimitiveSelector({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const items = selectedRepo ? CATEGORIES : filteredRepos;
+
       switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setSelectedIndex((prev) =>
+            prev < items.length - 1 ? prev + 1 : prev
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (selectedRepo) {
+            if (CATEGORIES[selectedIndex]) {
+              onSelect(CATEGORIES[selectedIndex]);
+            }
+          } else if (filteredRepos[selectedIndex]) {
+            const repo = filteredRepos[selectedIndex];
+            setSelectedRepo(repo);
+            setSelectedIndex(0);
+          }
+          break;
         case "Escape":
           e.preventDefault();
           if (selectedCategory) {
@@ -161,7 +184,15 @@ export default function PrimitiveSelector({
           break;
       }
     },
-    [selectedRepo, selectedCategory, onClose, query]
+    [
+      selectedRepo,
+      selectedCategory,
+      filteredRepos,
+      selectedIndex,
+      onSelect,
+      onClose,
+      query,
+    ]
   );
 
   const handleSelectRepo = (repo: Repository) => {
@@ -230,26 +261,49 @@ export default function PrimitiveSelector({
         ) : !hasResults && query ? (
           <ListItem variant="no-results" query={query} />
         ) : (
-          <SelectableList
-            items={visibleRepos}
-            selectedIndex={selectedIndex}
-            onSelect={handleSelectRepo}
-            onHighlight={setSelectedIndex}
-            loading={loading}
-            error={error}
-            renderItem={(repo, isSelected) => (
+          <>
+            {visibleRepos.map((repo, index) => (
               <ListItem
                 key={repo.id}
                 variant="standard"
                 icon={<RepoIcon size={16} />}
                 title={repo.name}
                 description={repo.description}
-                isSelected={isSelected}
+                isSelected={index === selectedIndex}
                 onClick={() => handleSelectRepo(repo)}
                 searchQuery={query}
               />
+            ))}
+
+            {!query && filteredRepos.length > 5 && !showAll && (
+              <ListItem
+                variant="link"
+                icon={<ChevronRightIcon size={16} />}
+                label={`View all ${filteredRepos.length} repositories`}
+                onClick={() => setShowAll(true)}
+              />
             )}
-          />
+
+            {showDivider && <ListItem variant="divider" />}
+
+            {filteredActions.map((action) => (
+              <ListItem
+                key={action.id}
+                variant="standard"
+                icon={
+                  action.type === "file" ? (
+                    <FileIcon size={16} />
+                  ) : action.type === "link" ? (
+                    <RepoIcon size={16} />
+                  ) : (
+                    <UploadIcon size={16} />
+                  )
+                }
+                title={action.label}
+                searchQuery={query}
+              />
+            ))}
+          </>
         )}
       </div>
     </Popover>
