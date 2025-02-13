@@ -1,0 +1,111 @@
+src/
+├── components/
+│   ├── Editor/                      # Core text editor functionality
+│   │   ├── index.tsx                # Main editor component
+│   │   ├── TextArea.tsx             # The actual text input
+│   │   └── DragOverlay.tsx         # Overlay for drag and drop
+│   │
+│   ├── PrimitiveSelector/          # For @ commands - selecting files, PRs, etc
+│   │   ├── index.tsx
+│   │   ├── SearchResults.tsx
+│   │   └── PrimitiveItem.tsx
+│   │
+│   ├── CommandSelector/            # For / commands - selecting AI actions
+│   │   ├── index.tsx
+│   │   ├── SearchResults.tsx
+│   │   └── CommandItem.tsx
+│   │
+│   ├── CommandRunner/              # UI for running/accepting AI suggestions
+│   │   ├── index.tsx
+│   │   └── SuggestionBubble.tsx
+│   │
+│   └── ReferenceList/              # Bottom reference list
+│       ├── index.tsx
+│       ├── ReferenceItem.tsx
+│       └── ReferenceGroup.tsx
+
+├── hooks/
+│   ├── usePrimitiveSelector.ts     # Logic for @ command selection
+│   ├── useCommandSelector.ts       # Logic for / command selection
+│   ├── useCommandRunner.ts         # Logic for AI suggestion handling
+│   └── useDragAndDrop.ts          # Drag and drop functionality
+
+
+
+# Primitive Reference Selector PRD
+
+## Overview
+A GitHub-style reference selector that allows users to reference various elements (PRs, issues, files, etc.) from repositories. The selector provides a multi-level navigation experience with search capabilities at each level.
+
+## User Flow
+
+### Level 1: Repository Selection
+- Triggered by typing "@"
+- Shows a list of recently accessed repositories
+- Initial view shows top 5 repos, with "View all" option
+- Search filters across all repositories
+- Search results highlight matched text in bold
+- Keyboard navigation: Up/Down to select, Enter to choose, Esc to close
+- Shows repo name and description
+
+### Level 2: Category Selection
+After selecting a repository:
+- Replaces "@" with a gray breadcrumb (e.g., "copilot-api > ")
+- Shows categories:
+  1. Codebase (entire repository)
+  2. Pull Requests
+  3. Issues
+  4. Discussions
+  5. Files and Folders
+- Each category shows an icon and description
+- Search at this level searches across all primitives in all categories
+- Search results ordered by relevance, not grouped by category
+- Results show primitive type icon for context
+
+### Level 3: Primitive Selection
+After selecting a category:
+- Updates breadcrumb (e.g., "copilot-api > prs")
+- Shows list of primitives in selected category (max 50)
+- Search filters within current category
+- Each item shows:
+  - Appropriate icon (PR, issue, file, etc.)
+  - Title/name
+  - Description/summary when available
+  - Number/ID when applicable
+
+## Keyboard Navigation
+- Up/Down: Navigate through items
+- Enter: Select current item
+- Esc: Go back one level / close selector
+- Tab: Move between interactive elements
+- Type to search at any level
+
+## Search Behavior
+- Real-time filtering as user types
+- Searches across:
+  - Repository names and descriptions (Level 1)
+  - All primitive titles and descriptions (Level 2)
+  - Current category items (Level 3)
+- Highlights matched text in bold
+- Orders results by relevance score
+- Shows "No results" state when appropriate
+
+## Visual Design
+- Consistent with GitHub's design system
+- Clear hierarchy and spacing
+- Hover states for interactive elements
+- Loading states for async operations
+- Error states for failed operations
+- Maximum height with scrolling
+- Smooth transitions between views
+
+## Technical Considerations
+- State management for navigation levels
+- Efficient search implementation
+- Keyboard navigation handling
+- Position calculation for popover
+- Loading and error states
+- Data fetching strategy
+- Type safety throughout
+
+Would you like me to start with any particular aspect of the implementation?
