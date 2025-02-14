@@ -9,6 +9,13 @@ import { Position, PopoverPosition } from "@/types/shared";
 import { EditorState, Block, TextBlock, MentionBlock } from "@/types/editor";
 import { v4 as uuidv4 } from "uuid";
 
+// Cache interfaces
+interface PrimitivesCache {
+  [repoName: string]: {
+    [category: string]: any[];
+  };
+}
+
 export default function Home() {
   const [editorState, setEditorState] = useState<EditorState>({
     blocks: [
@@ -22,6 +29,10 @@ export default function Home() {
     selection: null,
   });
 
+  // Add cache states
+  const [reposCache, setReposCache] = useState<any[]>([]);
+  const [primitivesCache, setPrimitivesCache] = useState<PrimitivesCache>({});
+
   const [primitiveSelector, setPrimitiveSelector] = useState({
     isOpen: false,
     position: {
@@ -30,6 +41,38 @@ export default function Home() {
     } as PopoverPosition,
     query: "",
   });
+
+  // Cache management functions
+  const getCachedRepos = useCallback(async () => {
+    if (reposCache.length > 0) {
+      return reposCache;
+    }
+    // If not in cache, fetch and cache
+    const repos = await fetch("/api/repos").then((res) => res.json());
+    setReposCache(repos);
+    return repos;
+  }, [reposCache]);
+
+  const getCachedPrimitives = useCallback(
+    async (repoName: string, category: string) => {
+      if (primitivesCache[repoName]?.[category]) {
+        return primitivesCache[repoName][category];
+      }
+      // If not in cache, fetch and cache
+      const primitives = await fetch(
+        `/api/primitives?repo=${repoName}&category=${category}`
+      ).then((res) => res.json());
+      setPrimitivesCache((prev) => ({
+        ...prev,
+        [repoName]: {
+          ...prev[repoName],
+          [category]: primitives,
+        },
+      }));
+      return primitives;
+    },
+    [primitivesCache]
+  );
 
   const handleTriggerPrimitive = useCallback(
     (trigger: string, position: Position, query: string) => {
