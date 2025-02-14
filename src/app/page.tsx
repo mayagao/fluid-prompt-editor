@@ -3,13 +3,25 @@
 import { useState, useCallback } from "react";
 import Editor from "@/components/Editor";
 import PrimitiveSelector from "@/components/PrimitiveSelector";
-import ReferenceList from "@/components/ReferenceList";
+import ResourceList from "@/components/ResourceList";
 import { Reference } from "@/types/reference";
 import { Position, PopoverPosition } from "@/types/shared";
+import { EditorState, Block, TextBlock, MentionBlock } from "@/types/editor";
+import { v4 as uuidv4 } from "uuid";
 
 export default function Home() {
-  const [text, setText] = useState("");
-  const [references, setReferences] = useState<Reference[]>([]);
+  const [editorState, setEditorState] = useState<EditorState>({
+    blocks: [
+      {
+        id: uuidv4(),
+        type: "text",
+        content: "",
+      },
+    ],
+    cursor: { blockIndex: 0, offset: 0 },
+    selection: null,
+  });
+
   const [primitiveSelector, setPrimitiveSelector] = useState({
     isOpen: false,
     position: {
@@ -44,28 +56,53 @@ export default function Home() {
     }));
   }, []);
 
+  const handlePrimitiveSelect = useCallback((item: any) => {
+    // Handle primitive selection
+    console.log("Selected primitive:", item);
+  }, []);
+
+  // Convert text blocks and completed mention blocks to references
+  const getResourcesFromBlocks = useCallback((blocks: Block[]): Reference[] => {
+    return blocks
+      .filter((block): block is MentionBlock => {
+        return (
+          block.type === "mention" &&
+          block.state === "completed" &&
+          block.selectedItem !== undefined
+        );
+      })
+      .map((block) => ({
+        id: block.id,
+        type: block.selectedItem.type,
+        title: block.selectedItem.title,
+        description: `${block.selectedItem.repository.name}/${block.selectedItem.type}`,
+      }));
+  }, []);
+
   const handleDelete = (id: string) => {
-    setReferences((refs) => refs.filter((ref) => ref.id !== id));
+    setEditorState((prev) => ({
+      ...prev,
+      blocks: prev.blocks.filter((block) => block.id !== id),
+    }));
   };
 
   return (
     <main className="flex min-h-screen flex-col p-4">
       <div className="flex flex-col gap-4 max-w-4xl mx-auto w-full">
         <div className="relative">
-          <Editor
-            value={text}
-            onChange={setText}
-            onTriggerPrimitive={handleTriggerPrimitive}
-            onClosePrimitive={handleClosePrimitive}
-          />
+          <Editor initialValue={editorState} onChange={setEditorState} />
           <PrimitiveSelector
             isOpen={primitiveSelector.isOpen}
             position={primitiveSelector.position}
             query={primitiveSelector.query}
             onClose={handleClosePrimitive}
+            onSelect={handlePrimitiveSelect}
           />
         </div>
-        <ReferenceList references={references} onDelete={handleDelete} />
+        <ResourceList
+          resources={getResourcesFromBlocks(editorState.blocks)}
+          onDelete={handleDelete}
+        />
       </div>
     </main>
   );
