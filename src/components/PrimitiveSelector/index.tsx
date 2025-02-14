@@ -25,7 +25,7 @@ interface PrimitiveSelectorProps {
   position: PopoverPosition;
   query: string;
   onClose: () => void;
-  onSelect: (item: Repository | Category) => void;
+  onSelect: (item: any) => void;
 }
 
 const ACTIONS: Action[] = [
@@ -197,12 +197,19 @@ export default function PrimitiveSelector({
 
   const handleSelectRepo = (repo: Repository) => {
     setSelectedRepo(repo);
-    setSelectedIndex(0); // Reset selection index for categories
+    setSelectedIndex(0);
+    onSelect({
+      name: repo.name,
+      title: repo.name,
+      value: repo,
+      type: "repository",
+    });
   };
 
   const handleSelectCategory = (category: Category) => {
     setSelectedCategory(category);
     setSelectedIndex(0);
+    onSelect(category.label);
   };
 
   return (

@@ -25,7 +25,7 @@ interface PrimitiveListProps {
   category: Category;
   selectedIndex: number;
   query: string;
-  onSelect: (item: PullRequest | Issue | Discussion | RepoFile) => void;
+  onSelect: (item: any) => void;
 }
 
 export function PrimitiveList({
@@ -202,6 +202,15 @@ export function PrimitiveList({
     }
   };
 
+  const handleSelectItem = (item: any) => {
+    onSelect({
+      title: item.title || item.name || item,
+      name: item.name || item.title || item,
+      value: item,
+      type: category.label.toLowerCase(),
+    });
+  };
+
   if (loading) {
     return <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>;
   }
@@ -214,25 +223,13 @@ export function PrimitiveList({
     <>
       {items.map((item, index) => (
         <ListItem
-          key={item.id}
+          key={item.id || index}
           variant="standard"
           icon={getIcon(item)}
-          title={
-            "number" in item
-              ? `#${item.number} ${item.title}`
-              : "name" in item
-              ? item.name
-              : item.title
-          }
-          description={
-            "description" in item
-              ? item.description
-              : "path" in item
-              ? item.path
-              : undefined
-          }
-          isSelected={index === selectedIndex}
-          onClick={() => onSelect(item)}
+          title={item.title || item.name || item}
+          description={item.description || null}
+          selected={index === selectedIndex}
+          onClick={() => handleSelectItem(item)}
           searchQuery={query}
           suffixIcon={
             isDirectory(item) ? <ChevronRightIcon size={16} /> : undefined
