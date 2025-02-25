@@ -50,7 +50,7 @@ export default function ListItem(props: ListItemProps) {
   if (variant === "no-results") {
     return (
       <div className="px-3 py-2 text-sm text-gray-500">
-        No results for "{props.query}"
+        No results for &quot;{props.query}&quot;
       </div>
     );
   }
