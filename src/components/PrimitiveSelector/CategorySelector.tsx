@@ -50,7 +50,7 @@ export function CategorySelector({
           icon={getCategoryIcon(category.icon)}
           title={category.label}
           description={category.description}
-          isSelected={index === selectedIndex}
+          selected={index === selectedIndex}
           onClick={() => onSelect(category)}
           suffixIcon={<ChevronRightIcon size={16} />}
           searchQuery={query}

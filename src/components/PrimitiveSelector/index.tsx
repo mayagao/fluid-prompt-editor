@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, KeyboardEvent } from "react";
 import { PopoverPosition } from "@/types/shared";
 import { Repository, Action, Category, CATEGORIES } from "@/types/primitives";
 import {
@@ -13,7 +13,7 @@ import {
   LinkIcon,
   UploadIcon,
 } from "@primer/octicons-react";
-import ListItem, { BaseListItemProps } from "@/components/ui/ListItem";
+import ListItem from "@/components/ui/ListItem";
 import Popover from "@/components/ui/Popover";
 import { SAMPLE_REPOS } from "@/data/samples";
 import { useSearch } from "@/hooks/useSearch";
@@ -38,11 +38,6 @@ const ACTIONS: Action[] = [
     type: "upload",
   },
 ];
-
-interface NoResultsListItemProps extends BaseListItemProps {
-  variant: "no-results";
-  query: string;
-}
 
 export default function PrimitiveSelector({
   isOpen,
@@ -217,7 +212,7 @@ export default function PrimitiveSelector({
       isOpen={isOpen}
       position={position}
       onClose={onClose}
-      className="w-[400px] bg-white rounded-lg shadow-lg border border-gray-200"
+      className="min-w-[300px] max-w-[400px] p-0"
       onKeyDown={handleKeyDown}
     >
       {selectedRepo && (
@@ -276,7 +271,7 @@ export default function PrimitiveSelector({
                 icon={<RepoIcon size={16} />}
                 title={repo.name}
                 description={repo.description}
-                isSelected={index === selectedIndex}
+                selected={index === selectedIndex}
                 onClick={() => handleSelectRepo(repo)}
                 searchQuery={query}
               />

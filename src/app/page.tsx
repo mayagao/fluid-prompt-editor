@@ -16,6 +16,16 @@ interface PrimitivesCache {
   };
 }
 
+interface CodeSymbol {
+  name: string;
+  path: string;
+  type: "function" | "method" | "class";
+  lineNumber: number;
+  title: string;
+}
+
+const CODE_CATEGORIES = ["Functions", "Methods", "Classes"];
+
 export default function Home() {
   const [editorState, setEditorState] = useState<EditorState>({
     blocks: [
@@ -58,10 +68,54 @@ export default function Home() {
       if (primitivesCache[repoName]?.[category]) {
         return primitivesCache[repoName][category];
       }
-      // If not in cache, fetch and cache
+
+      // Handle code symbol categories
+      if (CODE_CATEGORIES.includes(category)) {
+        const symbolType = category.toLowerCase().slice(0, -1); // Remove 's' to get 'function', 'method', 'class'
+        const query = `repo:${repoName} language:typescript type:${symbolType} sort:best-match`;
+
+        try {
+          const response = await fetch("/api/code-search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              query,
+              type: symbolType,
+              limit: 50,
+            }),
+          });
+
+          const symbols = await response.json();
+          const formattedSymbols = symbols.map((symbol: any) => ({
+            id: symbol.path + ":" + symbol.name,
+            title: symbol.name,
+            path: symbol.path,
+            type: symbolType,
+            lineNumber: symbol.lineNumber,
+          }));
+
+          setPrimitivesCache((prev) => ({
+            ...prev,
+            [repoName]: {
+              ...prev[repoName],
+              [category]: formattedSymbols,
+            },
+          }));
+
+          return formattedSymbols;
+        } catch (error) {
+          console.error("Error fetching code symbols:", error);
+          return [];
+        }
+      }
+
+      // Handle regular primitives
       const primitives = await fetch(
         `/api/primitives?repo=${repoName}&category=${category}`
       ).then((res) => res.json());
+
       setPrimitivesCache((prev) => ({
         ...prev,
         [repoName]: {

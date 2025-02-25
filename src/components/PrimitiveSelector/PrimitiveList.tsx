@@ -14,7 +14,7 @@ import {
   CommentDiscussionIcon,
   FileIcon,
   FileDirectoryIcon,
-  GitMergedIcon,
+  GitMergeIcon,
   IssueClosedIcon,
   ChevronRightIcon,
 } from "@primer/octicons-react";
@@ -169,7 +169,7 @@ export function PrimitiveList({
   const isDirectory = (
     item: PullRequest | Issue | Discussion | RepoFile
   ): boolean => {
-    return "type" in item && item.type === "dir";
+    return "type" in item && item.type === "directory";
   };
 
   // Update the getIcon function
@@ -177,7 +177,7 @@ export function PrimitiveList({
     switch (category.id) {
       case "prs":
         return (item as PullRequest).state === "merged" ? (
-          <GitMergedIcon size={16} className="text-purple-500" />
+          <GitMergeIcon size={16} className="text-purple-500" />
         ) : (item as PullRequest).state === "closed" ? (
           <GitPullRequestIcon size={16} className="text-red-500" />
         ) : (
@@ -204,11 +204,40 @@ export function PrimitiveList({
 
   const handleSelectItem = (item: any) => {
     onSelect({
-      title: item.title || item.name || item,
-      name: item.name || item.title || item,
+      title: getItemTitle(item),
+      name: getItemName(item),
       value: item,
       type: category.label.toLowerCase(),
     });
+  };
+
+  // Helper functions to safely access properties
+  const getItemTitle = (
+    item: PullRequest | Issue | Discussion | RepoFile
+  ): string => {
+    if ("title" in item) {
+      return item.title;
+    } else if ("name" in item) {
+      return item.name;
+    }
+    return String(item);
+  };
+
+  const getItemName = (
+    item: PullRequest | Issue | Discussion | RepoFile
+  ): string => {
+    if ("name" in item) {
+      return item.name;
+    } else if ("title" in item) {
+      return item.title;
+    }
+    return String(item);
+  };
+
+  const getItemDescription = (
+    item: PullRequest | Issue | Discussion | RepoFile
+  ): string | null => {
+    return "description" in item && item.description ? item.description : null;
   };
 
   if (loading) {
@@ -226,8 +255,8 @@ export function PrimitiveList({
           key={item.id || index}
           variant="standard"
           icon={getIcon(item)}
-          title={item.title || item.name || item}
-          description={item.description || null}
+          title={getItemTitle(item)}
+          description={getItemDescription(item)}
           selected={index === selectedIndex}
           onClick={() => handleSelectItem(item)}
           searchQuery={query}

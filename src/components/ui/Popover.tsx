@@ -7,6 +7,7 @@ interface PopoverProps {
   onClose?: () => void;
   children: React.ReactNode;
   className?: string;
+  onKeyDown?: (event: React.KeyboardEvent<Element>) => void;
 }
 
 export default function Popover({
@@ -15,6 +16,7 @@ export default function Popover({
   onClose,
   children,
   className = "",
+  onKeyDown,
 }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -23,13 +25,13 @@ export default function Popover({
 
     function handleClickOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
-        onClose();
+        if (onClose) onClose();
       }
     }
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        if (onClose) onClose();
       }
     }
 
@@ -74,6 +76,7 @@ export default function Popover({
         top: position.content.top,
         left: position.content.left,
       }}
+      onKeyDown={onKeyDown}
     >
       {children}
     </div>

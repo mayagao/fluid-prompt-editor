@@ -18,7 +18,7 @@ export type Category = {
   id: "codebase" | "prs" | "issues" | "discussions" | "files";
   label: string;
   description: string;
-  icon: React.ReactNode;
+  icon: string;
 };
 
 export const CATEGORIES: Category[] = [

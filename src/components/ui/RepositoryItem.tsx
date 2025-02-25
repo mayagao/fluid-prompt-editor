@@ -23,7 +23,7 @@ export function RepositoryItem({
       icon={<RepoIcon size={16} />}
       title={name}
       description={description}
-      isSelected={isSelected}
+      selected={isSelected}
       onClick={onSelect}
       searchQuery={searchQuery}
     />

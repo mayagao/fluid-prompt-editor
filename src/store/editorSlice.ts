@@ -1,3 +1,5 @@
+import { Reference } from "@/types/reference";
+
 interface EditorState {
   text: string;
   cursorPosition: number;
