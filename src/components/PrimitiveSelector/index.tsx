@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, KeyboardEvent } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { PopoverPosition } from "@/types/shared";
 import { Repository, Action, Category, CATEGORIES } from "@/types/primitives";
 import {
@@ -17,8 +17,6 @@ import ListItem from "@/components/ui/ListItem";
 import Popover from "@/components/ui/Popover";
 import { SAMPLE_REPOS } from "@/data/samples";
 import { useSearch } from "@/hooks/useSearch";
-import { CategorySelector } from "./CategorySelector";
-import { PrimitiveList } from "./PrimitiveList";
 
 interface PrimitiveSelectorProps {
   isOpen: boolean;
@@ -28,17 +26,6 @@ interface PrimitiveSelectorProps {
   onSelect: (item: any) => void;
 }
 
-const ACTIONS: Action[] = [
-  { id: "file", label: "Add a text file", icon: "file", type: "file" },
-  { id: "link", label: "Add an external link", icon: "link", type: "link" },
-  {
-    id: "upload",
-    label: "Upload from computer",
-    icon: "upload",
-    type: "upload",
-  },
-];
-
 export default function PrimitiveSelector({
   isOpen,
   position,
@@ -47,7 +34,7 @@ export default function PrimitiveSelector({
   onSelect,
 }: PrimitiveSelectorProps) {
   const [allRepos, setAllRepos] = useState<Repository[]>([]);
-  const [showAll, setShowAll] = useState(false);
+  const [allPrimitives, setAllPrimitives] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -56,7 +43,7 @@ export default function PrimitiveSelector({
     null
   );
 
-  // Fetch all repos when component mounts
+  // Fetch repos when component mounts
   useEffect(() => {
     const fetchRepos = async () => {
       try {
@@ -67,7 +54,8 @@ export default function PrimitiveSelector({
           return;
         }
 
-        const response = await fetch(
+        // Fetch repos first
+        const reposResponse = await fetch(
           "https://api.github.com/orgs/langchain-ai/repos?sort=updated&per_page=50",
           {
             headers: {
@@ -77,21 +65,18 @@ export default function PrimitiveSelector({
           }
         );
 
-        if (!response.ok) {
-          throw new Error(`GitHub API error: ${response.statusText}`);
+        if (!reposResponse.ok) {
+          throw new Error(`GitHub API error: ${reposResponse.statusText}`);
         }
 
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setAllRepos(
-            data.map((repo) => ({
-              id: repo.id.toString(),
-              name: repo.name,
-              description: repo.description || null,
-              fullName: repo.full_name,
-            }))
-          );
-        }
+        const reposData = await reposResponse.json();
+        const repos = reposData.map((repo: any) => ({
+          id: repo.id.toString(),
+          name: repo.name,
+          description: repo.description || null,
+          fullName: repo.full_name,
+        }));
+        setAllRepos(repos);
       } catch (err) {
         console.error("Failed to fetch repos:", err);
         setError(err instanceof Error ? err.message : "Failed to fetch repos");
@@ -106,18 +91,155 @@ export default function PrimitiveSelector({
     }
   }, [isOpen]);
 
-  // Search through all repos using the query from textarea
+  // Fetch primitives when a repo is selected
+  useEffect(() => {
+    const fetchPrimitives = async () => {
+      if (!selectedRepo) return;
+
+      try {
+        setLoading(true);
+        const token = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
+        if (!token) return;
+
+        const allPrimitivesData = [];
+        for (const category of CATEGORIES) {
+          try {
+            let endpoint = "";
+            switch (category.id) {
+              case "prs":
+                endpoint = `https://api.github.com/repos/${selectedRepo.fullName}/pulls?state=open&per_page=50`;
+                break;
+              case "issues":
+                endpoint = `https://api.github.com/repos/${selectedRepo.fullName}/issues?state=open&per_page=50`;
+                break;
+              case "discussions":
+                endpoint = `https://api.github.com/repos/${selectedRepo.fullName}/discussions?per_page=50`;
+                break;
+              case "files":
+                endpoint = `https://api.github.com/repos/${selectedRepo.fullName}/contents?per_page=50`;
+                break;
+              default:
+                continue;
+            }
+
+            const response = await fetch(endpoint, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json",
+                ...(category.id === "discussions" && {
+                  Accept: "application/vnd.github.discussions-preview+json",
+                }),
+              },
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              const items = data.map((item: any) => ({
+                id: item.id?.toString() || item.sha,
+                title: item.title || item.name,
+                description: item.body || item.description,
+                type: category.id,
+                categoryLabel: category.label,
+                repository: selectedRepo,
+                iconName: category.icon,
+              }));
+              allPrimitivesData.push(...items);
+            }
+          } catch (err) {
+            console.error(
+              `Failed to fetch ${category.id} for ${selectedRepo.name}:`,
+              err
+            );
+          }
+        }
+        setAllPrimitives(allPrimitivesData);
+      } catch (err) {
+        console.error("Failed to fetch primitives:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch primitives"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPrimitives();
+  }, [selectedRepo]);
+
+  // Search results for repositories
   const filteredRepos = useSearch(allRepos, query, ["name", "description"]);
-  const filteredActions = useSearch(ACTIONS, query, ["label"]);
 
-  // Show only first 5 repos if not showing all and not searching
-  const visibleRepos =
-    !showAll && !query ? filteredRepos.slice(0, 5) : filteredRepos;
+  // Search results for primitives
+  const filteredPrimitives = useSearch(allPrimitives, query, [
+    "title",
+    "description",
+  ]);
 
-  const hasResults = visibleRepos.length > 0 || filteredActions.length > 0;
-  const showDivider = visibleRepos.length > 0 && filteredActions.length > 0;
+  // Determine which items to show based on current state
+  const filteredItems = useMemo(() => {
+    if (!selectedRepo) {
+      return filteredRepos;
+    }
 
-  const getCategoryIcon = (iconName: string) => {
+    if (query) {
+      return filteredPrimitives;
+    }
+
+    return CATEGORIES;
+  }, [selectedRepo, filteredRepos, filteredPrimitives, query]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setSelectedIndex((prev) =>
+            prev < filteredItems.length - 1 ? prev + 1 : prev
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (filteredItems[selectedIndex]) {
+            const item = filteredItems[selectedIndex];
+            if (!selectedRepo) {
+              setSelectedRepo(item);
+              setSelectedIndex(0);
+            } else if (query) {
+              // If searching, select the primitive directly
+              onSelect({
+                title: `${item.repository.name}/${item.categoryLabel}/${item.title}`,
+                type: item.type,
+                repository: item.repository,
+                category: item.categoryLabel,
+                item: item,
+              });
+            } else {
+              // If not searching, select the category
+              setSelectedCategory(item);
+              onSelect(item.label);
+            }
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          if (selectedRepo) {
+            setSelectedRepo(null);
+            setSelectedCategory(null);
+            setSelectedIndex(0);
+          } else {
+            onClose();
+          }
+          break;
+      }
+    },
+    [filteredItems, selectedIndex, selectedRepo, query, onSelect, onClose]
+  );
+
+  const getCategoryIcon = useCallback((iconName: string) => {
     switch (iconName) {
       case "repo":
         return <RepoIcon size={16} />;
@@ -132,80 +254,7 @@ export default function PrimitiveSelector({
       default:
         return <RepoIcon size={16} />;
     }
-  };
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const items = selectedRepo ? CATEGORIES : filteredRepos;
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < items.length - 1 ? prev + 1 : prev
-          );
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
-          break;
-        case "Enter":
-          e.preventDefault();
-          if (selectedRepo) {
-            if (CATEGORIES[selectedIndex]) {
-              onSelect(CATEGORIES[selectedIndex]);
-            }
-          } else if (filteredRepos[selectedIndex]) {
-            const repo = filteredRepos[selectedIndex];
-            setSelectedRepo(repo);
-            setSelectedIndex(0);
-          }
-          break;
-        case "Escape":
-          e.preventDefault();
-          if (selectedCategory) {
-            setSelectedCategory(null);
-          } else if (selectedRepo) {
-            setSelectedRepo(null);
-          } else {
-            onClose();
-          }
-          break;
-        case "Backspace":
-          if (query === "" && selectedRepo) {
-            setSelectedRepo(null);
-            setSelectedIndex(0);
-          }
-          break;
-      }
-    },
-    [
-      selectedRepo,
-      selectedCategory,
-      filteredRepos,
-      selectedIndex,
-      onSelect,
-      onClose,
-      query,
-    ]
-  );
-
-  const handleSelectRepo = (repo: Repository) => {
-    setSelectedRepo(repo);
-    setSelectedIndex(0);
-    onSelect({
-      name: repo.name,
-      title: repo.name,
-      value: repo,
-      type: "repository",
-    });
-  };
-
-  const handleSelectCategory = (category: Category) => {
-    setSelectedCategory(category);
-    setSelectedIndex(0);
-    onSelect(category.label);
-  };
+  }, []);
 
   return (
     <Popover
@@ -215,94 +264,72 @@ export default function PrimitiveSelector({
       className="min-w-[300px] max-w-[400px] p-0"
       onKeyDown={handleKeyDown}
     >
-      {selectedRepo && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
-          <button
-            onClick={() => {
-              if (selectedCategory) {
-                setSelectedCategory(null);
-              } else {
-                setSelectedRepo(null);
-              }
-              setSelectedIndex(0);
-            }}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <ChevronLeftIcon size={16} />
-          </button>
-          <span className="text-sm font-medium text-gray-700">
-            {selectedRepo.name}
-            {selectedCategory && ` > ${selectedCategory.label}`}
-          </span>
-        </div>
-      )}
-
       <div className="max-h-[300px] overflow-y-auto py-2">
-        {selectedRepo ? (
-          selectedCategory ? (
-            <PrimitiveList
-              repository={selectedRepo}
-              category={selectedCategory}
-              selectedIndex={selectedIndex}
-              query={query}
-              onSelect={onSelect}
-            />
-          ) : (
-            <CategorySelector
-              selectedRepo={selectedRepo}
-              selectedIndex={selectedIndex}
-              query={query}
-              onSelect={handleSelectCategory}
-            />
-          )
-        ) : // Level 1: Repository Selection
-        loading ? (
+        {loading ? (
           <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
         ) : error ? (
           <div className="px-3 py-2 text-sm text-red-500">{error}</div>
-        ) : !hasResults && query ? (
+        ) : filteredItems.length === 0 ? (
           <ListItem variant="no-results" query={query} />
-        ) : (
+        ) : !selectedRepo ? (
+          // Show repository selection
           <>
-            {visibleRepos.map((repo, index) => (
+            {filteredItems.map((repo, index) => (
               <ListItem
                 key={repo.id}
                 variant="standard"
                 icon={<RepoIcon size={16} />}
                 title={repo.name}
-                description={repo.description}
+                description={repo.description || ""}
                 selected={index === selectedIndex}
-                onClick={() => handleSelectRepo(repo)}
+                onClick={() => {
+                  setSelectedRepo(repo);
+                  setSelectedIndex(0);
+                }}
                 searchQuery={query}
               />
             ))}
-
-            {!query && filteredRepos.length > 5 && !showAll && (
+          </>
+        ) : query ? (
+          // Show filtered primitives when searching
+          <>
+            {filteredItems.map((item, index) => (
               <ListItem
-                variant="link"
-                icon={<ChevronRightIcon size={16} />}
-                label={`View all ${filteredRepos.length} repositories`}
-                onClick={() => setShowAll(true)}
-              />
-            )}
-
-            {showDivider && <ListItem variant="divider" />}
-
-            {filteredActions.map((action) => (
-              <ListItem
-                key={action.id}
+                key={`${item.repository.name}-${item.type}-${item.id}`}
                 variant="standard"
-                icon={
-                  action.type === "file" ? (
-                    <FileIcon size={16} />
-                  ) : action.type === "link" ? (
-                    <RepoIcon size={16} />
-                  ) : (
-                    <UploadIcon size={16} />
-                  )
+                icon={getCategoryIcon(item.iconName)}
+                title={item.title}
+                description={`${item.categoryLabel}`}
+                selected={index === selectedIndex}
+                onClick={() =>
+                  onSelect({
+                    title: `${item.repository.name}/${item.categoryLabel}/${item.title}`,
+                    type: item.type,
+                    repository: item.repository,
+                    category: item.categoryLabel,
+                    item: item,
+                  })
                 }
-                title={action.label}
                 searchQuery={query}
+              />
+            ))}
+          </>
+        ) : (
+          // Show categories when not searching
+          <>
+            {CATEGORIES.map((category, index) => (
+              <ListItem
+                key={category.id}
+                variant="standard"
+                icon={getCategoryIcon(category.icon)}
+                title={category.label}
+                description={category.description}
+                selected={index === selectedIndex}
+                onClick={() => {
+                  setSelectedCategory(category);
+                  onSelect(category.label);
+                }}
+                suffixIcon={<ChevronRightIcon size={16} />}
               />
             ))}
           </>

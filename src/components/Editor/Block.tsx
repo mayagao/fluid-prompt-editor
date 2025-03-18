@@ -6,6 +6,8 @@ import type {
   CursorPosition,
 } from "@/types/editor";
 import { SubPill, PillPath } from "./SubPill";
+import { RepoIcon } from "@primer/octicons-react";
+import { getCategoryIcon } from "./icons";
 
 interface BlockProps {
   block: Block;
@@ -15,6 +17,7 @@ interface BlockProps {
   onSegmentHighlight?: (blockId: string, segmentIndex: number) => void;
   onSegmentDelete?: (blockId: string, segmentIndex: number) => void;
   onSegmentSelect?: (blockId: string, segmentIndex: number) => void;
+  onSegmentBackspace?: (blockId: string, segmentIndex: number) => void;
   onFocus?: (blockId: string) => void;
   onSelect?: (blockId: string) => void;
 }
@@ -48,20 +51,24 @@ const MentionBlockComponent: React.FC<
   onSegmentHighlight,
   onSegmentDelete,
   onSegmentSelect,
+  onSegmentBackspace,
   onFocus,
   onSelect,
 }) => {
   // Track which segment is highlighted (0 = repository, 1 = category, 2 = item)
   const [highlightedSegment, setHighlightedSegment] = useState<number | null>(
-    block.highlighted ? 0 : null
+    null
   );
 
   // Update highlightedSegment when block changes
   useEffect(() => {
-    if (block.highlighted) {
-      setHighlightedSegment(0);
+    if (block.highlighted && block.state === "searching") {
+      // Only highlight first segment when in searching state
+      setHighlightedSegment(block.level > 1 ? block.level - 2 : 0);
+    } else if (!block.highlighted) {
+      setHighlightedSegment(null);
     }
-  }, [block.highlighted]);
+  }, [block.highlighted, block.state, block.level]);
 
   // Handle block click
   const handleBlockClick = (e: React.MouseEvent) => {
@@ -89,7 +96,7 @@ const MentionBlockComponent: React.FC<
       case 1:
         return "select repository";
       case 2:
-        return "select category";
+        return "select category or search anything";
       case 3:
         return "select item";
       default:
@@ -99,12 +106,18 @@ const MentionBlockComponent: React.FC<
 
   const handleSegmentClick = (index: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setHighlightedSegment(index === highlightedSegment ? null : index);
+    // Toggle highlight
+    const newHighlightedSegment = index === highlightedSegment ? null : index;
+    setHighlightedSegment(newHighlightedSegment);
+
     if (onSegmentHighlight) {
-      onSegmentHighlight(block.id, index);
+      onSegmentHighlight(
+        block.id,
+        newHighlightedSegment !== null ? newHighlightedSegment : -1
+      );
     }
-    if (onSegmentSelect) {
-      onSegmentSelect(block.id, index);
+    if (onSegmentSelect && newHighlightedSegment !== null) {
+      onSegmentSelect(block.id, newHighlightedSegment);
     }
   };
 
@@ -115,25 +128,34 @@ const MentionBlockComponent: React.FC<
     }
   };
 
+  const handleSegmentBackspace = (index: number) => {
+    if (onSegmentBackspace) {
+      onSegmentBackspace(block.id, index);
+    }
+  };
+
   const renderContent = () => {
     // For completed mention pills, show as a series of segments
     if (block.state === "completed" || block.state === "editing") {
       const segments = [];
 
-      // Always include repository
+      // Always include repository with its icon
       if (block.selections.repository) {
         segments.push({
           type: "repository" as const,
           text: block.selections.repository.name,
+          icon: <RepoIcon />,
           data: block.selections.repository.value,
         });
       }
 
-      // Include category if selected
+      // Include category if selected, with icon only (no text)
       if (block.selections.category) {
+        const categoryName = block.selections.category.name;
         segments.push({
           type: "category" as const,
-          text: block.selections.category.name,
+          text: "", // No text, just icon
+          icon: getCategoryIcon(categoryName),
           data: block.selections.category.value,
         });
       }
@@ -151,13 +173,16 @@ const MentionBlockComponent: React.FC<
       }
 
       return (
-        <span className="flex items-center ml-1">
+        <span className="flex items-center">
           <PillPath
             segments={segments}
-            highlightedIndex={null}
+            highlightedIndex={highlightedSegment}
             onSegmentClick={handleSegmentClick}
             onSegmentDelete={
               block.state === "editing" ? handleSegmentDelete : undefined
+            }
+            onSegmentBackspace={
+              block.state === "editing" ? handleSegmentBackspace : undefined
             }
             isEditing={block.state === "editing"}
             isSelected={block.isSelected}
@@ -168,40 +193,32 @@ const MentionBlockComponent: React.FC<
 
     // For searching state, show appropriate UI based on level
     if (block.state === "searching") {
-      if (block.selections.repository) {
-        // When repository is selected, show repo name and input for category/item
-        const segments = [];
-        const activeSegmentIndex = getActiveSegmentIndex();
+      const segments = [];
 
-        // Always include repository in segments
+      // Add repository segment if we have one
+      if (block.selections.repository) {
         segments.push({
           type: "repository" as const,
           text: block.selections.repository.name,
+          icon: <RepoIcon size={16} />,
           data: block.selections.repository.value,
         });
+      }
 
-        // Add category if selected
-        if (block.selections.category) {
-          segments.push({
-            type: "category" as const,
-            text: block.selections.category.name,
-            data: block.selections.category.value,
-          });
-        }
-
-        return (
-          <span className="flex items-center ml-1">
+      return (
+        <span className="flex items-center">
+          {block.level === 1 ? (
+            <span className={isActive ? "rounded px-1" : ""}>@</span>
+          ) : null}
+          {segments.length > 0 && (
             <PillPath
               segments={segments}
-              highlightedIndex={
-                block.highlighted
-                  ? 0
-                  : highlightedSegment !== null
-                  ? highlightedSegment
-                  : activeSegmentIndex
-              }
-              onSegmentClick={handleSegmentClick}
+              highlightedIndex={null}
+              onSegmentClick={() => {}}
+              isEditing={false}
             />
+          )}
+          <span className="relative ml-1">
             <span className="relative">
               {block.searchQuery}
               {isActive && cursorOffset !== null && (
@@ -209,7 +226,7 @@ const MentionBlockComponent: React.FC<
                   <span
                     className="absolute w-[2px] h-[1.2em] bg-black animate-blink"
                     style={{
-                      left: `${cursorOffset * 8}px`,
+                      left: `${(cursorOffset - 1) * 8}px`,
                       top: "0.1em",
                     }}
                   />
@@ -221,31 +238,6 @@ const MentionBlockComponent: React.FC<
                 </>
               )}
             </span>
-          </span>
-        );
-      }
-
-      // Initial state - just show @ and search query
-      return (
-        <span className="flex items-center relative ml-1">
-          <span className="relative">
-            {block.searchQuery}
-            {isActive && cursorOffset !== null && (
-              <>
-                <span
-                  className="absolute w-[2px] h-[1.2em] bg-black animate-blink"
-                  style={{
-                    left: `${(cursorOffset - 1) * 8}px`,
-                    top: "0.1em",
-                  }}
-                />
-                {!block.searchQuery && (
-                  <span className="text-gray-400 ml-0.5">
-                    {getPlaceholderText()}
-                  </span>
-                )}
-              </>
-            )}
           </span>
         </span>
       );
@@ -267,9 +259,6 @@ const MentionBlockComponent: React.FC<
       }`}
       onClick={handleBlockClick}
     >
-      <span className={isActive && block.level === 1 ? "rounded px-1" : ""}>
-        @
-      </span>
       {renderContent()}
     </span>
   );
@@ -283,6 +272,7 @@ export default function Block({
   onSegmentHighlight,
   onSegmentDelete,
   onSegmentSelect,
+  onSegmentBackspace,
   onFocus,
   onSelect,
 }: BlockProps) {
@@ -306,6 +296,7 @@ export default function Block({
           onSegmentHighlight={onSegmentHighlight}
           onSegmentDelete={onSegmentDelete}
           onSegmentSelect={onSegmentSelect}
+          onSegmentBackspace={onSegmentBackspace}
           onFocus={onFocus}
           onSelect={onSelect}
         />

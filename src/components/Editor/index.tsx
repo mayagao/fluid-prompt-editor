@@ -9,7 +9,7 @@ import type {
   MentionBlock,
 } from "@/types/editor";
 import type { Reference } from "@/types/reference";
-import BlockComponent from "./Block";
+import Block from "./Block";
 import { Position } from "@/types/shared";
 import PrimitiveSelector from "@/components/PrimitiveSelector";
 
@@ -53,7 +53,7 @@ export default function Editor({
   });
   const [isFocused, setIsFocused] = useState(false); // Add focus state
 
-  // Track which segment is currently highlighted in which block
+  // Handle segment highlights
   const [highlightedSegments, setHighlightedSegments] = useState<{
     [blockId: string]: number | null;
   }>({});
@@ -83,12 +83,384 @@ export default function Editor({
 
   const handleSegmentHighlight = useCallback(
     (blockId: string, segmentIndex: number) => {
-      setHighlightedSegments((prev) => ({
-        ...prev,
-        [blockId]: prev[blockId] === segmentIndex ? null : segmentIndex,
-      }));
+      setHighlightedSegments((prev) => {
+        const newHighlighted = { ...prev };
+        // If segmentIndex is -1, clear the highlight
+        if (segmentIndex === -1) {
+          delete newHighlighted[blockId];
+        } else {
+          newHighlighted[blockId] = segmentIndex;
+        }
+        return newHighlighted;
+      });
     },
     []
+  );
+
+  // Add this function to force reset the popover to match pill state
+  const resetPrimitiveSelectorToMatchPillState = useCallback(
+    (mentionBlock: MentionBlock) => {
+      if (!editorRef.current) return;
+
+      const rect = editorRef.current.getBoundingClientRect();
+      const lineHeight = 20;
+      const charWidth = 8;
+
+      // Position based on level
+      if (mentionBlock.level === 1) {
+        // Repository selection
+        setPrimitivePosition({
+          top: rect.top,
+          left: rect.left + 10, // Just after @
+        });
+      } else if (mentionBlock.level === 2) {
+        // Category selection
+        const repoName = mentionBlock.selections.repository?.name || "";
+        setPrimitivePosition({
+          top: rect.top,
+          left: rect.left + repoName.length * charWidth + 20,
+        });
+      } else if (mentionBlock.level === 3) {
+        // Item selection
+        const repoName = mentionBlock.selections.repository?.name || "";
+        const catName = mentionBlock.selections.category?.name || "";
+        setPrimitivePosition({
+          top: rect.top,
+          left:
+            rect.left + (repoName.length + catName.length + 2) * charWidth + 20,
+        });
+      }
+    },
+    [editorRef]
+  );
+
+  const handleSegmentDelete = useCallback(
+    (blockId: string, segmentIndex: number) => {
+      updateState((currentState: EditorState): EditorState => {
+        const { blocks } = currentState;
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        if (blockIndex === -1) return currentState;
+
+        const currentBlock = blocks[blockIndex];
+        if (currentBlock.type !== "mention") return currentState;
+
+        const newBlocks = [...blocks];
+
+        // Handle deletion based on segment index
+        if (segmentIndex === 0) {
+          // Delete the entire pill if deleting the repository
+          newBlocks.splice(blockIndex, 1);
+        } else if (segmentIndex === 1) {
+          // Remove category and item, keep just repository
+          // Reset to searching state at level 2
+          const updatedBlock: MentionBlock = {
+            ...currentBlock,
+            selections: {
+              repository: currentBlock.selections.repository,
+            },
+            selectedItem: {
+              title: currentBlock.selections.repository?.name,
+              type: "codebase",
+              repository: currentBlock.selections.repository?.value,
+            },
+            state: "searching" as const, // Explicit type for state
+            level: 2, // Reset to level 2 (category selection)
+            searchQuery: "", // Clear search query
+          };
+
+          newBlocks[blockIndex] = updatedBlock;
+
+          // Reset highlighted segments
+          setHighlightedSegments((prev) => {
+            const newHighlighted = { ...prev };
+            newHighlighted[blockId] = 0; // Highlight the repository segment
+            return newHighlighted;
+          });
+
+          // Explicitly reset PrimitiveSelector to match updated pill state
+          resetPrimitiveSelectorToMatchPillState(updatedBlock);
+          setShowPrimitiveSelector(true);
+
+          return {
+            ...currentState,
+            blocks: newBlocks,
+            cursor: {
+              blockIndex: blockIndex,
+              offset: 0,
+            },
+          };
+        } else if (segmentIndex === 2) {
+          // Remove only the item
+          newBlocks[blockIndex] = {
+            ...currentBlock,
+            selectedItem: {
+              title: `${currentBlock.selections.repository?.name}/${currentBlock.selections.category?.name}`,
+              type: currentBlock.selectedItem?.type || "codebase",
+              repository: currentBlock.selectedItem?.repository,
+              category: currentBlock.selectedItem?.category,
+            },
+          };
+        }
+
+        return {
+          ...currentState,
+          blocks: newBlocks,
+        };
+      });
+    },
+    [updateState, resetPrimitiveSelectorToMatchPillState]
+  );
+
+  const handleSegmentSelect = useCallback(
+    (blockId: string, segmentIndex: number) => {
+      updateState((currentState: EditorState): EditorState => {
+        const { blocks } = currentState;
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        if (blockIndex === -1) return currentState;
+
+        const currentBlock = blocks[blockIndex];
+        if (currentBlock.type !== "mention") return currentState;
+
+        const newBlocks = [...blocks];
+        newBlocks[blockIndex] = {
+          ...currentBlock,
+          selectedSegment: segmentIndex,
+        };
+
+        return {
+          ...currentState,
+          blocks: newBlocks,
+        };
+      });
+    },
+    [updateState]
+  );
+
+  const handleBlockFocus = useCallback(
+    (blockId: string) => {
+      updateState((currentState: EditorState): EditorState => {
+        const { blocks } = currentState;
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        if (blockIndex === -1) return currentState;
+
+        const newBlocks = [...blocks];
+
+        // Reset other blocks' focus state
+        newBlocks.forEach((block, idx) => {
+          if (block.id !== blockId && block.type === "mention") {
+            newBlocks[idx] = {
+              ...block,
+              isFocused: false,
+            };
+          }
+        });
+
+        // Set this block as focused if it's a mention block
+        const currentBlock = newBlocks[blockIndex];
+        if (currentBlock.type === "mention") {
+          newBlocks[blockIndex] = {
+            ...currentBlock,
+            isFocused: true,
+          };
+        }
+
+        return {
+          ...currentState,
+          blocks: newBlocks,
+          cursor: {
+            blockIndex,
+            offset: 0,
+          },
+        };
+      });
+    },
+    [updateState]
+  );
+
+  const handleBlockSelect = useCallback(
+    (blockId: string) => {
+      updateState((currentState: EditorState): EditorState => {
+        const { blocks } = currentState;
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        if (blockIndex === -1) return currentState;
+
+        const newBlocks = [...blocks];
+
+        // Reset other blocks' selection state
+        newBlocks.forEach((block, idx) => {
+          if (block.id !== blockId && block.type === "mention") {
+            newBlocks[idx] = {
+              ...block,
+              isSelected: false,
+            };
+          }
+        });
+
+        // Toggle this block's selection state if it's a mention block
+        const currentBlock = newBlocks[blockIndex];
+        if (currentBlock.type === "mention") {
+          newBlocks[blockIndex] = {
+            ...currentBlock,
+            isSelected: !currentBlock.isSelected,
+          };
+        }
+
+        return {
+          ...currentState,
+          blocks: newBlocks,
+        };
+      });
+    },
+    [updateState]
+  );
+
+  const handleSegmentBackspace = useCallback(
+    (blockId: string, segmentIndex: number) => {
+      updateState((currentState: EditorState): EditorState => {
+        const { blocks, cursor } = currentState;
+
+        // Find the block
+        const blockIndex = blocks.findIndex((block) => block.id === blockId);
+        if (blockIndex === -1) return currentState;
+
+        const currentBlock = blocks[blockIndex];
+        if (currentBlock.type !== "mention") return currentState;
+
+        const newBlocks = [...blocks];
+
+        // Handle backspace based on segment index
+        if (segmentIndex === 0) {
+          // Delete the entire pill if we're backspacing at the repository level
+          newBlocks.splice(blockIndex, 1);
+
+          // Reset highlighted segments and close popover
+          setHighlightedSegments((prev) => {
+            const newHighlighted = { ...prev };
+            delete newHighlighted[blockId];
+            return newHighlighted;
+          });
+
+          // Close the popover
+          setShowPrimitiveSelector(false);
+
+          // If there's a previous block, put cursor at the end of it
+          if (blockIndex > 0) {
+            const prevBlock = blocks[blockIndex - 1];
+            return {
+              ...currentState,
+              blocks: newBlocks,
+              cursor: {
+                blockIndex: blockIndex - 1,
+                offset:
+                  prevBlock.type === "text" ? prevBlock.content.length : 0,
+              },
+            };
+          }
+          // If there's a next block, put cursor at beginning
+          else if (blockIndex < blocks.length - 1) {
+            return {
+              ...currentState,
+              blocks: newBlocks,
+              cursor: {
+                blockIndex: blockIndex,
+                offset: 0,
+              },
+            };
+          }
+          // Otherwise add a text block
+          else {
+            newBlocks.push(createTextBlock());
+            return {
+              ...currentState,
+              blocks: newBlocks,
+              cursor: {
+                blockIndex: blockIndex,
+                offset: 0,
+              },
+            };
+          }
+        } else if (segmentIndex === 1) {
+          // Remove category and item, keep just repository
+          // Reset to searching state at level 2
+          const updatedBlock: MentionBlock = {
+            ...currentBlock,
+            selections: {
+              repository: currentBlock.selections.repository,
+            },
+            selectedItem: {
+              title: currentBlock.selections.repository?.name,
+              type: "codebase",
+              repository: currentBlock.selections.repository?.value,
+            },
+            state: "searching" as const, // Explicit type for state
+            level: 2, // Reset to level 2 (category selection)
+            searchQuery: "", // Clear search query
+          };
+
+          newBlocks[blockIndex] = updatedBlock;
+
+          // Reset highlighted segments
+          setHighlightedSegments((prev) => {
+            const newHighlighted = { ...prev };
+            newHighlighted[blockId] = 0; // Highlight the repository segment
+            return newHighlighted;
+          });
+
+          // Explicitly reset PrimitiveSelector to match updated pill state
+          resetPrimitiveSelectorToMatchPillState(updatedBlock);
+          setShowPrimitiveSelector(true);
+
+          return {
+            ...currentState,
+            blocks: newBlocks,
+            cursor: {
+              blockIndex: blockIndex,
+              offset: 0,
+            },
+          };
+        } else if (segmentIndex === 2) {
+          // Remove item, keep repository and category
+          // Reset to searching state at level 3
+          const updatedBlock: MentionBlock = {
+            ...currentBlock,
+            state: "searching" as const, // Explicit type for state
+            level: 3, // Reset to level 3 (item selection)
+            searchQuery: "", // Clear search query
+            selectedItem: {
+              title: `${currentBlock.selections.repository?.name}/${currentBlock.selections.category?.name}`,
+              type: currentBlock.selectedItem?.type || "codebase",
+              repository: currentBlock.selectedItem?.repository,
+              category: currentBlock.selectedItem?.category,
+            },
+          };
+
+          newBlocks[blockIndex] = updatedBlock;
+
+          // Reset highlighted segments
+          setHighlightedSegments((prev) => {
+            const newHighlighted = { ...prev };
+            newHighlighted[blockId] = 1; // Highlight the category segment
+            return newHighlighted;
+          });
+
+          // Explicitly reset PrimitiveSelector to match updated pill state
+          resetPrimitiveSelectorToMatchPillState(updatedBlock);
+          setShowPrimitiveSelector(true);
+
+          return {
+            ...currentState,
+            blocks: newBlocks,
+            cursor: {
+              blockIndex: blockIndex,
+              offset: 0,
+            },
+          };
+        }
+
+        return currentState;
+      });
+    },
+    [updateState, editorRef, resetPrimitiveSelectorToMatchPillState]
   );
 
   const handleKeyDown = useCallback(
@@ -227,17 +599,32 @@ export default function Editor({
               }
             }
 
-            // Normal backspace behavior for text within a block
-            if (cursor.offset > 0) {
-              if (currentBlock.type === "text") {
-                const newContent =
-                  currentBlock.content.slice(0, cursor.offset - 1) +
-                  currentBlock.content.slice(cursor.offset);
+            // Handle backspace in mention block that's in searching state
+            if (
+              currentBlock.type === "mention" &&
+              currentBlock.state === "searching"
+            ) {
+              // If at level 1 and no search query, delete the entire mention block
+              if (currentBlock.level === 1 && !currentBlock.searchQuery) {
+                const newBlocks = [...blocks];
+                newBlocks.splice(cursor.blockIndex, 1);
+                setShowPrimitiveSelector(false);
 
+                return {
+                  ...currentState,
+                  blocks: newBlocks,
+                  cursor: {
+                    blockIndex: Math.max(0, cursor.blockIndex - 1),
+                    offset: 0,
+                  },
+                };
+              }
+              // If there's a search query, just delete from it
+              else if (currentBlock.searchQuery) {
                 const newBlocks = [...blocks];
                 newBlocks[cursor.blockIndex] = {
                   ...currentBlock,
-                  content: newContent,
+                  searchQuery: currentBlock.searchQuery.slice(0, -1),
                 };
 
                 return {
@@ -245,68 +632,34 @@ export default function Editor({
                   blocks: newBlocks,
                   cursor: {
                     ...cursor,
-                    offset: cursor.offset - 1,
-                  },
-                };
-              }
-              // Handle backspace in mention block
-              if (
-                currentBlock.type === "mention" &&
-                currentBlock.state === "searching"
-              ) {
-                if (currentBlock.searchQuery.length > 0) {
-                  const newBlocks = [...blocks];
-                  newBlocks[cursor.blockIndex] = {
-                    ...currentBlock,
-                    searchQuery: currentBlock.searchQuery.slice(0, -1),
-                  };
-                  return {
-                    ...currentState,
-                    blocks: newBlocks,
-                    cursor: {
-                      ...cursor,
-                      offset: cursor.offset - 1,
-                    },
-                  };
-                } else if (currentBlock.path.length > 0) {
-                  const newPath = [...currentBlock.path];
-                  newPath.pop();
-                  const newBlocks = [...blocks];
-                  newBlocks[cursor.blockIndex] = {
-                    ...currentBlock,
-                    path: newPath,
-                  };
-                  return {
-                    ...currentState,
-                    blocks: newBlocks,
-                    cursor: {
-                      ...cursor,
-                      offset: cursor.offset - 1,
-                    },
-                  };
-                }
-              }
-            } else if (cursor.blockIndex > 0) {
-              // Merge with previous block if possible
-              const prevBlock = blocks[cursor.blockIndex - 1];
-              if (prevBlock.type === "text" && currentBlock.type === "text") {
-                const newBlocks = [...blocks];
-                newBlocks[cursor.blockIndex - 1] = {
-                  ...prevBlock,
-                  content: prevBlock.content + currentBlock.content,
-                };
-                newBlocks.splice(cursor.blockIndex, 1);
-
-                return {
-                  ...currentState,
-                  blocks: newBlocks,
-                  cursor: {
-                    blockIndex: cursor.blockIndex - 1,
-                    offset: prevBlock.content.length,
+                    offset: Math.max(0, cursor.offset - 1),
                   },
                 };
               }
             }
+
+            // Normal backspace behavior for text within a block
+            if (cursor.offset > 0 && currentBlock.type === "text") {
+              const newContent =
+                currentBlock.content.slice(0, cursor.offset - 1) +
+                currentBlock.content.slice(cursor.offset);
+
+              const newBlocks = [...blocks];
+              newBlocks[cursor.blockIndex] = {
+                ...currentBlock,
+                content: newContent,
+              };
+
+              return {
+                ...currentState,
+                blocks: newBlocks,
+                cursor: {
+                  ...cursor,
+                  offset: cursor.offset - 1,
+                },
+              };
+            }
+
             return currentState;
           }
 
@@ -422,6 +775,9 @@ export default function Editor({
                     return newHighlighted;
                   });
 
+                  // Close any open popover
+                  setShowPrimitiveSelector(false);
+
                   // If there's a next block, put cursor at beginning, otherwise add a text block
                   if (cursor.blockIndex < blocks.length - 1) {
                     return {
@@ -446,8 +802,8 @@ export default function Editor({
                 }
                 // If highlighted segment is the category (second segment)
                 else if (highlightedSegment === 1) {
-                  // Remove category and item, keep just repository
-                  newBlocks[cursor.blockIndex] = {
+                  // Remove category and item, return to searching state
+                  const updatedBlock: MentionBlock = {
                     ...currentBlock,
                     selections: {
                       repository: currentBlock.selections.repository,
@@ -457,7 +813,12 @@ export default function Editor({
                       type: "codebase",
                       repository: currentBlock.selections.repository?.value,
                     },
+                    state: "searching" as const,
+                    level: 2,
+                    searchQuery: "",
                   };
+
+                  newBlocks[cursor.blockIndex] = updatedBlock;
 
                   // Reset highlighted segments
                   setHighlightedSegments((prev) => {
@@ -466,15 +827,23 @@ export default function Editor({
                     return newHighlighted;
                   });
 
+                  // Update popover
+                  resetPrimitiveSelectorToMatchPillState(updatedBlock);
+                  setShowPrimitiveSelector(true);
+
                   return {
                     ...currentState,
                     blocks: newBlocks,
+                    cursor: {
+                      blockIndex: cursor.blockIndex,
+                      offset: 0,
+                    },
                   };
                 }
                 // If highlighted segment is the item (third segment)
                 else if (highlightedSegment === 2) {
-                  // Remove item, keep repository and category
-                  newBlocks[cursor.blockIndex] = {
+                  // Remove item, return to searching state for item selection
+                  const updatedBlock: MentionBlock = {
                     ...currentBlock,
                     selectedItem: {
                       title: `${currentBlock.selections.repository?.name}/${currentBlock.selections.category?.name}`,
@@ -482,7 +851,12 @@ export default function Editor({
                       repository: currentBlock.selectedItem?.repository,
                       category: currentBlock.selectedItem?.category,
                     },
+                    state: "searching" as const,
+                    level: 3,
+                    searchQuery: "",
                   };
+
+                  newBlocks[cursor.blockIndex] = updatedBlock;
 
                   // Reset highlighted segments
                   setHighlightedSegments((prev) => {
@@ -491,9 +865,17 @@ export default function Editor({
                     return newHighlighted;
                   });
 
+                  // Update popover
+                  resetPrimitiveSelectorToMatchPillState(updatedBlock);
+                  setShowPrimitiveSelector(true);
+
                   return {
                     ...currentState,
                     blocks: newBlocks,
+                    cursor: {
+                      blockIndex: cursor.blockIndex,
+                      offset: 0,
+                    },
                   };
                 }
               }
@@ -664,7 +1046,12 @@ export default function Editor({
         }
       });
     },
-    [updateState, highlightedSegments]
+    [
+      updateState,
+      highlightedSegments,
+      editorRef,
+      resetPrimitiveSelectorToMatchPillState,
+    ]
   );
 
   const handleBlockClick = useCallback(
@@ -709,7 +1096,7 @@ export default function Editor({
 
           switch (currentBlock.level) {
             case 1: {
-              // Selected a repository
+              // Selected a repository - move to level 2 for category selection
               newBlocks[cursor.blockIndex] = {
                 ...currentBlock,
                 level: 2,
@@ -721,6 +1108,14 @@ export default function Editor({
                   },
                 },
               };
+
+              // Reset any highlighted segments
+              setHighlightedSegments((prev) => {
+                const newHighlighted = { ...prev };
+                delete newHighlighted[currentBlock.id];
+                return newHighlighted;
+              });
+
               return {
                 ...currentState,
                 blocks: newBlocks,
@@ -749,6 +1144,14 @@ export default function Editor({
                 // Add a new text block after
                 newBlocks.splice(cursor.blockIndex + 1, 0, createTextBlock());
                 setShowPrimitiveSelector(false);
+
+                // Reset highlighted segments
+                setHighlightedSegments((prev) => {
+                  const newHighlighted = { ...prev };
+                  delete newHighlighted[currentBlock.id];
+                  return newHighlighted;
+                });
+
                 return {
                   ...currentState,
                   blocks: newBlocks,
@@ -758,7 +1161,7 @@ export default function Editor({
                   },
                 };
               } else {
-                // Selected a category, move to level 3
+                // Selected a category, move to level 3 for item selection
                 newBlocks[cursor.blockIndex] = {
                   ...currentBlock,
                   level: 3,
@@ -771,6 +1174,14 @@ export default function Editor({
                     },
                   },
                 };
+
+                // Reset highlighted segments
+                setHighlightedSegments((prev) => {
+                  const newHighlighted = { ...prev };
+                  delete newHighlighted[currentBlock.id];
+                  return newHighlighted;
+                });
+
                 return {
                   ...currentState,
                   blocks: newBlocks,
@@ -801,6 +1212,14 @@ export default function Editor({
               // Add a new text block after
               newBlocks.splice(cursor.blockIndex + 1, 0, createTextBlock());
               setShowPrimitiveSelector(false);
+
+              // Reset highlighted segments
+              setHighlightedSegments((prev) => {
+                const newHighlighted = { ...prev };
+                delete newHighlighted[currentBlock.id];
+                return newHighlighted;
+              });
+
               return {
                 ...currentState,
                 blocks: newBlocks,
@@ -847,31 +1266,123 @@ export default function Editor({
     }
   }, [initialValue]);
 
+  // Add a global key event listener to help debug the backspace issue
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Find any pill that is currently highlighted
+      const highlightedBlockIds = Object.keys(highlightedSegments);
+
+      if (e.key === "Backspace" && highlightedBlockIds.length > 0) {
+        const blockId = highlightedBlockIds[0];
+        const segmentIndex = highlightedSegments[blockId];
+
+        // Only handle if there's a valid segment highlighted
+        if (segmentIndex !== null && segmentIndex >= 0) {
+          // This is a fallback in case the SubPill's keydown event doesn't work
+          e.preventDefault();
+          e.stopPropagation();
+          handleSegmentBackspace(blockId, segmentIndex);
+        }
+      } else if (e.key === "Escape") {
+        // Close the popover when escape is pressed
+        setShowPrimitiveSelector(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleGlobalKeyDown);
+    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [highlightedSegments, handleSegmentBackspace]);
+
+  // Update the component to monitor pill state and popover state
+  useEffect(() => {
+    // Find any active mention pill that's in searching state
+    if (showPrimitiveSelector && state.blocks.length > 0) {
+      const currentBlock = state.blocks[state.cursor.blockIndex];
+
+      if (
+        currentBlock.type === "mention" &&
+        currentBlock.state === "searching"
+      ) {
+        // Check if pill level and popover content match
+        // If we have a repository selected but no category, ensure we're showing category options
+        if (
+          currentBlock.selections.repository &&
+          !currentBlock.selections.category &&
+          currentBlock.level === 2
+        ) {
+          // Position properly for category selection
+          if (editorRef.current) {
+            const rect = editorRef.current.getBoundingClientRect();
+            const lineHeight = 20;
+            const charWidth = 8;
+
+            setPrimitivePosition({
+              top: rect.top + state.cursor.blockIndex * lineHeight,
+              left:
+                rect.left +
+                (currentBlock.selections.repository.name.length || 0) *
+                  charWidth +
+                20,
+            });
+          }
+        }
+
+        // Similarly for item selection
+        if (
+          currentBlock.selections.repository &&
+          currentBlock.selections.category &&
+          currentBlock.level === 3
+        ) {
+          // Position properly for item selection
+          if (editorRef.current) {
+            const rect = editorRef.current.getBoundingClientRect();
+            const lineHeight = 20;
+            const charWidth = 8;
+            const repoLength =
+              currentBlock.selections.repository.name.length || 0;
+            const catLength = currentBlock.selections.category.name.length || 0;
+
+            setPrimitivePosition({
+              top: rect.top + state.cursor.blockIndex * lineHeight,
+              left: rect.left + (repoLength + catLength + 2) * charWidth + 20,
+            });
+          }
+        }
+      }
+    }
+  }, [showPrimitiveSelector, state.blocks, state.cursor.blockIndex]);
+
   return (
     <div
-      ref={editorRef}
-      className={`w-full min-h-[200px] p-4 rounded-lg border ${
-        isFocused ? "border-blue-400" : "border-gray-200"
-      } bg-white focus:outline-none`}
+      className={`border rounded-lg p-4 focus:outline-none ${
+        isFocused ? "ring ring-blue-300 border-blue-300" : "border-gray-300"
+      }`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
       onBlur={handleBlur}
+      ref={editorRef}
     >
-      {state.blocks.map((block, index) => (
-        <BlockComponent
-          key={block.id}
-          block={block}
-          isActive={isFocused && index === state.cursor.blockIndex}
-          cursorOffset={
-            isFocused && index === state.cursor.blockIndex
-              ? state.cursor.offset
-              : null
-          }
-          onClick={(e: React.MouseEvent) => handleBlockClick(index, e)}
-          onSegmentHighlight={handleSegmentHighlight}
-        />
-      ))}
+      <div className="relative min-h-[100px]">
+        {state.blocks.map((block, index) => (
+          <div key={block.id} className="my-1 flex flex-wrap">
+            <Block
+              block={block}
+              isActive={index === state.cursor.blockIndex}
+              cursorOffset={
+                index === state.cursor.blockIndex ? state.cursor.offset : null
+              }
+              onClick={(e) => handleBlockClick(index, e)}
+              onSegmentHighlight={handleSegmentHighlight}
+              onSegmentDelete={handleSegmentDelete}
+              onSegmentSelect={handleSegmentSelect}
+              onSegmentBackspace={handleSegmentBackspace}
+              onFocus={handleBlockFocus}
+              onSelect={handleBlockSelect}
+            />
+          </div>
+        ))}
+      </div>
 
       {showPrimitiveSelector && (
         <PrimitiveSelector
