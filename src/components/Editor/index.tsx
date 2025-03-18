@@ -44,12 +44,14 @@ export default function Editor({
   onSubmit,
 }: EditorProps) {
   const [state, setState] = useState<EditorState>(initialValue);
+  const [cachedValue, setCachedValue] = useState<EditorState>(initialValue); // Cache the editor value
   const editorRef = useRef<HTMLDivElement>(null);
   const [showPrimitiveSelector, setShowPrimitiveSelector] = useState(false);
   const [primitivePosition, setPrimitivePosition] = useState<Position>({
     top: 0,
     left: 0,
   });
+  const [isFocused, setIsFocused] = useState(false); // Add focus state
 
   // Track which segment is currently highlighted in which block
   const [highlightedSegments, setHighlightedSegments] = useState<{
@@ -60,9 +62,12 @@ export default function Editor({
     (updater: EditorState | ((prev: EditorState) => EditorState)) => {
       setState(updater);
       if (typeof updater === "function") {
-        onChange?.(updater(state));
+        const newState = updater(state);
+        onChange?.(newState);
+        setCachedValue(newState); // Cache the updated value
       } else {
         onChange?.(updater);
+        setCachedValue(updater); // Cache the updated value
       }
     },
     [onChange, state]
@@ -683,6 +688,9 @@ export default function Editor({
           },
         })
       );
+
+      // Set focus when clicking on a block
+      setIsFocused(true);
     },
     [updateState]
   );
@@ -810,11 +818,21 @@ export default function Editor({
     [updateState]
   );
 
+  // Handle focus and blur events
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+  };
+
   // Focus management
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
       if (editorRef.current && !editorRef.current.contains(e.target as Node)) {
         setShowPrimitiveSelector(false);
+        setIsFocused(false);
       }
     };
 
@@ -822,20 +840,33 @@ export default function Editor({
     return () => document.removeEventListener("mousedown", handleGlobalClick);
   }, []);
 
+  // Load cached value when component initializes
+  useEffect(() => {
+    if (initialValue !== initialEditorState) {
+      setCachedValue(initialValue);
+    }
+  }, [initialValue]);
+
   return (
     <div
       ref={editorRef}
-      className="w-full min-h-[200px] p-4 rounded-lg border border-gray-200 bg-white focus:outline-none"
+      className={`w-full min-h-[200px] p-4 rounded-lg border ${
+        isFocused ? "border-blue-400" : "border-gray-200"
+      } bg-white focus:outline-none`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
     >
       {state.blocks.map((block, index) => (
         <BlockComponent
           key={block.id}
           block={block}
-          isActive={index === state.cursor.blockIndex}
+          isActive={isFocused && index === state.cursor.blockIndex}
           cursorOffset={
-            index === state.cursor.blockIndex ? state.cursor.offset : null
+            isFocused && index === state.cursor.blockIndex
+              ? state.cursor.offset
+              : null
           }
           onClick={(e: React.MouseEvent) => handleBlockClick(index, e)}
           onSegmentHighlight={handleSegmentHighlight}
