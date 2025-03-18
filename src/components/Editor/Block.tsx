@@ -74,7 +74,7 @@ const MentionBlockComponent: React.FC<
                       <span
                         className="absolute w-[2px] h-[1.2em] bg-black animate-blink"
                         style={{
-                          left: `${cursorOffset * 6}px`,
+                          left: `${cursorOffset * 8}px`,
                           top: "0.1em",
                         }}
                       />
@@ -94,24 +94,27 @@ const MentionBlockComponent: React.FC<
 
       // Initial state - just show @ and search query
       return (
-        <span className="flex items-center">
-          <span>@{block.searchQuery}</span>
-          {isActive && cursorOffset !== null && (
-            <>
-              <span
-                className="absolute w-[2px] h-[1.2em] bg-black animate-blink"
-                style={{
-                  left: `${cursorOffset * 6}px`,
-                  top: "0.1em",
-                }}
-              />
-              {!block.searchQuery && (
-                <span className="text-gray-400 ml-0.5">
-                  {getPlaceholderText()}
-                </span>
-              )}
-            </>
-          )}
+        <span className="flex items-center relative">
+          <span>@</span>
+          <span className="relative">
+            {block.searchQuery}
+            {isActive && cursorOffset !== null && (
+              <>
+                <span
+                  className="absolute w-[2px] h-[1.2em] bg-black animate-blink"
+                  style={{
+                    left: `${(cursorOffset - 1) * 8}px`,
+                    top: "0.1em",
+                  }}
+                />
+                {!block.searchQuery && (
+                  <span className="text-gray-400 ml-0.5">
+                    {getPlaceholderText()}
+                  </span>
+                )}
+              </>
+            )}
+          </span>
         </span>
       );
     }
