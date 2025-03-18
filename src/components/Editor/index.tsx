@@ -51,6 +51,11 @@ export default function Editor({
     left: 0,
   });
 
+  // Track which segment is currently highlighted in which block
+  const [highlightedSegments, setHighlightedSegments] = useState<{
+    [blockId: string]: number | null;
+  }>({});
+
   const updateState = useCallback(
     (updater: EditorState | ((prev: EditorState) => EditorState)) => {
       setState(updater);
@@ -70,6 +75,16 @@ export default function Editor({
     }
     return "";
   }, []);
+
+  const handleSegmentHighlight = useCallback(
+    (blockId: string, segmentIndex: number) => {
+      setHighlightedSegments((prev) => ({
+        ...prev,
+        [blockId]: prev[blockId] === segmentIndex ? null : segmentIndex,
+      }));
+    },
+    []
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -355,6 +370,247 @@ export default function Editor({
             return currentState;
           }
 
+          case "Delete": {
+            // If cursor is on a mention pill
+            if (currentBlock.type === "mention") {
+              const blockId = currentBlock.id;
+              const highlightedSegment = highlightedSegments[blockId];
+
+              // For completed mention pills with highlighted segments
+              if (
+                currentBlock.state === "completed" &&
+                highlightedSegment !== undefined &&
+                highlightedSegment !== null
+              ) {
+                const newBlocks = [...blocks];
+
+                // Get the segments that make up the pill
+                const segments = [];
+                if (currentBlock.selections.repository) {
+                  segments.push({
+                    type: "repository",
+                    data: currentBlock.selections.repository,
+                  });
+                }
+                if (currentBlock.selections.category) {
+                  segments.push({
+                    type: "category",
+                    data: currentBlock.selections.category,
+                  });
+                }
+                if (currentBlock.selectedItem?.item) {
+                  segments.push({
+                    type: "item",
+                    data: currentBlock.selectedItem.item,
+                  });
+                }
+
+                // If highlighted segment is the repository (first segment)
+                if (highlightedSegment === 0) {
+                  // Delete the entire pill
+                  newBlocks.splice(cursor.blockIndex, 1);
+
+                  // Reset highlighted segments
+                  setHighlightedSegments((prev) => {
+                    const newHighlighted = { ...prev };
+                    delete newHighlighted[blockId];
+                    return newHighlighted;
+                  });
+
+                  // If there's a next block, put cursor at beginning, otherwise add a text block
+                  if (cursor.blockIndex < blocks.length - 1) {
+                    return {
+                      ...currentState,
+                      blocks: newBlocks,
+                      cursor: {
+                        blockIndex: cursor.blockIndex,
+                        offset: 0,
+                      },
+                    };
+                  } else {
+                    newBlocks.push(createTextBlock());
+                    return {
+                      ...currentState,
+                      blocks: newBlocks,
+                      cursor: {
+                        blockIndex: cursor.blockIndex,
+                        offset: 0,
+                      },
+                    };
+                  }
+                }
+                // If highlighted segment is the category (second segment)
+                else if (highlightedSegment === 1) {
+                  // Remove category and item, keep just repository
+                  newBlocks[cursor.blockIndex] = {
+                    ...currentBlock,
+                    selections: {
+                      repository: currentBlock.selections.repository,
+                    },
+                    selectedItem: {
+                      title: currentBlock.selections.repository?.name,
+                      type: "codebase",
+                      repository: currentBlock.selections.repository?.value,
+                    },
+                  };
+
+                  // Reset highlighted segments
+                  setHighlightedSegments((prev) => {
+                    const newHighlighted = { ...prev };
+                    delete newHighlighted[blockId];
+                    return newHighlighted;
+                  });
+
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                  };
+                }
+                // If highlighted segment is the item (third segment)
+                else if (highlightedSegment === 2) {
+                  // Remove item, keep repository and category
+                  newBlocks[cursor.blockIndex] = {
+                    ...currentBlock,
+                    selectedItem: {
+                      title: `${currentBlock.selections.repository?.name}/${currentBlock.selections.category?.name}`,
+                      type: currentBlock.selectedItem?.type || "codebase",
+                      repository: currentBlock.selectedItem?.repository,
+                      category: currentBlock.selectedItem?.category,
+                    },
+                  };
+
+                  // Reset highlighted segments
+                  setHighlightedSegments((prev) => {
+                    const newHighlighted = { ...prev };
+                    delete newHighlighted[blockId];
+                    return newHighlighted;
+                  });
+
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                  };
+                }
+              }
+              // For searching state - implement highlighting and deletion for in-progress pills
+              else if (currentBlock.state === "searching") {
+                // If a segment is already highlighted, delete it
+                if (currentBlock.highlighted) {
+                  // If at level 1 (repository selection), delete the entire pill
+                  if (currentBlock.level === 1) {
+                    const newBlocks = [...blocks];
+                    newBlocks.splice(cursor.blockIndex, 1);
+
+                    // If there's a next block, put cursor at beginning, otherwise add a text block
+                    if (cursor.blockIndex < blocks.length - 1) {
+                      return {
+                        ...currentState,
+                        blocks: newBlocks,
+                        cursor: {
+                          blockIndex: cursor.blockIndex,
+                          offset: 0,
+                        },
+                      };
+                    } else {
+                      newBlocks.push(createTextBlock());
+                      return {
+                        ...currentState,
+                        blocks: newBlocks,
+                        cursor: {
+                          blockIndex: cursor.blockIndex,
+                          offset: 0,
+                        },
+                      };
+                    }
+                  }
+                  // If at level 2 (category selection), go back to level 1
+                  else if (currentBlock.level === 2) {
+                    const newBlocks = [...blocks];
+                    newBlocks[cursor.blockIndex] = {
+                      ...currentBlock,
+                      level: 1,
+                      searchQuery: "",
+                      selections: {},
+                      highlighted: false,
+                    };
+                    return {
+                      ...currentState,
+                      blocks: newBlocks,
+                    };
+                  }
+                  // If at level 3 (item selection), go back to level 2
+                  else if (currentBlock.level === 3) {
+                    const newBlocks = [...blocks];
+                    newBlocks[cursor.blockIndex] = {
+                      ...currentBlock,
+                      level: 2,
+                      searchQuery: "",
+                      selections: {
+                        repository: currentBlock.selections.repository,
+                      },
+                      highlighted: false,
+                    };
+                    return {
+                      ...currentState,
+                      blocks: newBlocks,
+                    };
+                  }
+                }
+                // First delete - just highlight the current level
+                else {
+                  const newBlocks = [...blocks];
+                  newBlocks[cursor.blockIndex] = {
+                    ...currentBlock,
+                    highlighted: true,
+                  };
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                  };
+                }
+              }
+            }
+
+            // Default delete behavior for text blocks
+            if (currentBlock.type === "text") {
+              if (cursor.offset < currentBlock.content.length) {
+                // Delete character after cursor
+                const newContent =
+                  currentBlock.content.slice(0, cursor.offset) +
+                  currentBlock.content.slice(cursor.offset + 1);
+
+                const newBlocks = [...blocks];
+                newBlocks[cursor.blockIndex] = {
+                  ...currentBlock,
+                  content: newContent,
+                };
+
+                return {
+                  ...currentState,
+                  blocks: newBlocks,
+                };
+              } else if (cursor.blockIndex < blocks.length - 1) {
+                // At the end of text block, merge with next block if it's text
+                const nextBlock = blocks[cursor.blockIndex + 1];
+                if (nextBlock.type === "text") {
+                  const newBlocks = [...blocks];
+                  newBlocks[cursor.blockIndex] = {
+                    ...currentBlock,
+                    content: currentBlock.content + nextBlock.content,
+                  };
+                  newBlocks.splice(cursor.blockIndex + 1, 1);
+
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                  };
+                }
+              }
+            }
+
+            return currentState;
+          }
+
           default: {
             if (e.key.length === 1) {
               // Regular character input
@@ -403,7 +659,7 @@ export default function Editor({
         }
       });
     },
-    [updateState]
+    [updateState, highlightedSegments]
   );
 
   const handleBlockClick = useCallback(
@@ -582,6 +838,7 @@ export default function Editor({
             index === state.cursor.blockIndex ? state.cursor.offset : null
           }
           onClick={(e: React.MouseEvent) => handleBlockClick(index, e)}
+          onSegmentHighlight={handleSegmentHighlight}
         />
       ))}
 
