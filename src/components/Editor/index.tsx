@@ -165,6 +165,49 @@ export default function Editor({
           }
 
           case "Backspace": {
+            // If cursor is at the beginning of a block and there's a completed mention pill before it
+            if (cursor.offset === 0 && cursor.blockIndex > 0) {
+              const prevBlock = blocks[cursor.blockIndex - 1];
+
+              // If the previous block is a completed mention pill
+              if (
+                prevBlock.type === "mention" &&
+                prevBlock.state === "completed"
+              ) {
+                // If already highlighted, delete it completely
+                if (prevBlock.highlighted) {
+                  const newBlocks = [...blocks];
+                  newBlocks.splice(cursor.blockIndex - 1, 1);
+
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                    cursor: {
+                      blockIndex: cursor.blockIndex - 1,
+                      offset: 0,
+                    },
+                  };
+                } else {
+                  // First backspace just highlights the mention pill
+                  const newBlocks = [...blocks];
+                  newBlocks[cursor.blockIndex - 1] = {
+                    ...prevBlock,
+                    highlighted: true,
+                  };
+
+                  return {
+                    ...currentState,
+                    blocks: newBlocks,
+                    cursor: {
+                      blockIndex: cursor.blockIndex,
+                      offset: 0,
+                    },
+                  };
+                }
+              }
+            }
+
+            // Normal backspace behavior for text within a block
             if (cursor.offset > 0) {
               if (currentBlock.type === "text") {
                 const newContent =

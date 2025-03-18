@@ -27,6 +27,7 @@ export interface MentionBlock extends BaseBlock {
     category?: Selection;
     item?: Selection;
   };
+  highlighted?: boolean; // For two-step deletion process
 }
 
 export type Block = TextBlock | MentionBlock;

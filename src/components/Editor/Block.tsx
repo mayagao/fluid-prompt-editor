@@ -125,7 +125,11 @@ const MentionBlockComponent: React.FC<
   return (
     <span
       className={`relative inline-flex text-sm items-center rounded px-1.5 py-0.5 ${
-        block.state === "searching" ? "bg-blue-100" : "bg-blue-200"
+        block.highlighted
+          ? "bg-blue-200 border-2 border-blue-500"
+          : block.state === "searching"
+          ? "bg-blue-100"
+          : "bg-blue-200"
       }`}
       onClick={onClick}
     >
