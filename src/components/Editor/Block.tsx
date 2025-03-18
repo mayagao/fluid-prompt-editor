@@ -13,6 +13,10 @@ interface BlockProps {
   cursorOffset: number | null;
   onClick: (e: React.MouseEvent) => void;
   onSegmentHighlight?: (blockId: string, segmentIndex: number) => void;
+  onSegmentDelete?: (blockId: string, segmentIndex: number) => void;
+  onSegmentSelect?: (blockId: string, segmentIndex: number) => void;
+  onFocus?: (blockId: string) => void;
+  onSelect?: (blockId: string) => void;
 }
 
 const TextBlockComponent: React.FC<
@@ -36,7 +40,17 @@ const TextBlockComponent: React.FC<
 
 const MentionBlockComponent: React.FC<
   { block: MentionBlock } & Omit<BlockProps, "block">
-> = ({ block, isActive, cursorOffset, onClick, onSegmentHighlight }) => {
+> = ({
+  block,
+  isActive,
+  cursorOffset,
+  onClick,
+  onSegmentHighlight,
+  onSegmentDelete,
+  onSegmentSelect,
+  onFocus,
+  onSelect,
+}) => {
   // Track which segment is highlighted (0 = repository, 1 = category, 2 = item)
   const [highlightedSegment, setHighlightedSegment] = useState<number | null>(
     block.highlighted ? 0 : null
@@ -48,6 +62,18 @@ const MentionBlockComponent: React.FC<
       setHighlightedSegment(0);
     }
   }, [block.highlighted]);
+
+  // Handle block click
+  const handleBlockClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onFocus) {
+      onFocus(block.id);
+    }
+    if (onSelect) {
+      onSelect(block.id);
+    }
+    onClick(e);
+  };
 
   // Determine which segment should be highlighted based on the current level
   const getActiveSegmentIndex = () => {
@@ -77,11 +103,21 @@ const MentionBlockComponent: React.FC<
     if (onSegmentHighlight) {
       onSegmentHighlight(block.id, index);
     }
+    if (onSegmentSelect) {
+      onSegmentSelect(block.id, index);
+    }
+  };
+
+  const handleSegmentDelete = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onSegmentDelete) {
+      onSegmentDelete(block.id, index);
+    }
   };
 
   const renderContent = () => {
     // For completed mention pills, show as a series of segments
-    if (block.state === "completed") {
+    if (block.state === "completed" || block.state === "editing") {
       const segments = [];
 
       // Always include repository
@@ -118,8 +154,13 @@ const MentionBlockComponent: React.FC<
         <span className="flex items-center ml-1">
           <PillPath
             segments={segments}
-            highlightedIndex={block.highlighted ? 0 : highlightedSegment}
+            highlightedIndex={null}
             onSegmentClick={handleSegmentClick}
+            onSegmentDelete={
+              block.state === "editing" ? handleSegmentDelete : undefined
+            }
+            isEditing={block.state === "editing"}
+            isSelected={block.isSelected}
           />
         </span>
       );
@@ -215,22 +256,18 @@ const MentionBlockComponent: React.FC<
 
   return (
     <span
-      className={`relative inline-flex text-gray-700 text-sm items-center rounded-md py-0.5 px-1.5 ${
-        block.highlighted
-          ? "bg-blue-50 border border-1 border-blue-500"
+      className={`relative inline-flex text-gray-700 text-sm items-center rounded-md py-0.5 px-1.5 cursor-pointer transition-colors ${
+        block.isSelected || block.highlighted
+          ? "bg-blue-100 border border-blue-500"
+          : block.isFocused
+          ? "bg-gray-50 border border-gray-200"
           : block.state === "searching"
           ? "bg-gray-100 border border-gray-100"
-          : "bg-gray-50 border border-gray-200"
+          : "bg-transparent border border-transparent hover:bg-gray-50 hover:border-gray-200"
       }`}
-      onClick={onClick}
+      onClick={handleBlockClick}
     >
-      <span
-        className={
-          isActive && block.level === 1 && block.highlighted
-            ? "bg-blue-100 border border-blue-500 rounded px-1"
-            : ""
-        }
-      >
+      <span className={isActive && block.level === 1 ? "rounded px-1" : ""}>
         @
       </span>
       {renderContent()}
@@ -244,6 +281,10 @@ export default function Block({
   cursorOffset,
   onClick,
   onSegmentHighlight,
+  onSegmentDelete,
+  onSegmentSelect,
+  onFocus,
+  onSelect,
 }: BlockProps) {
   switch (block.type) {
     case "text":
@@ -263,6 +304,10 @@ export default function Block({
           cursorOffset={cursorOffset}
           onClick={onClick}
           onSegmentHighlight={onSegmentHighlight}
+          onSegmentDelete={onSegmentDelete}
+          onSegmentSelect={onSegmentSelect}
+          onFocus={onFocus}
+          onSelect={onSelect}
         />
       );
     default:
