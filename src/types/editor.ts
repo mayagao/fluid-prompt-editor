@@ -17,7 +17,7 @@ export interface Selection {
 
 export interface MentionBlock extends BaseBlock {
   type: "mention";
-  state: "searching" | "completed";
+  state: "searching" | "completed" | "editing";
   path: string[];
   searchQuery: string;
   selectedItem?: any;
@@ -27,6 +27,11 @@ export interface MentionBlock extends BaseBlock {
     category?: Selection;
     item?: Selection;
   };
+  highlighted?: boolean; // For two-step deletion process
+  selectedSegment?: number; // Track which segment is currently selected (0: repository, 1: category, 2: item)
+  isEditing?: boolean; // Whether the block is in editing mode
+  isFocused?: boolean; // Whether the block is in focus
+  isSelected?: boolean; // Whether the block is selected (for deletion)
 }
 
 export type Block = TextBlock | MentionBlock;
